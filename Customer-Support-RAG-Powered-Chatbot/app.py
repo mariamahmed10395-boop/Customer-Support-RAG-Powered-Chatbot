@@ -13,8 +13,10 @@ import hashlib
 import numpy as np
 import pandas as pd
 import faiss
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 # Fix Windows console encoding
@@ -26,15 +28,10 @@ if sys.platform == "win32":
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "Data", "customer_support_data.csv")
 CACHE_DIR = os.path.join(BASE_DIR, "embeddings_cache")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
 MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 TOP_K_DEFAULT = 10
 BATCH_SIZE = 512
-
-# --- Flask App ---------------------------------------------------------------
-app = Flask(__name__, static_folder=STATIC_DIR)
-CORS(app)
 
 # Global state
 model = None
@@ -134,7 +131,7 @@ def load_or_build_embeddings(kb):
         embeddings = np.array(embeddings, dtype="float32")
         print(f"    [OK] Embeddings generated in {time.time()-start:.1f}s")
 
-        # Build FAISS index (Inner Product for cosine similarity with normalized vectors)
+        # Build FAISS index
         print("[*] Building FAISS index...")
         idx_start = time.time()
         index = faiss.IndexFlatIP(EMBEDDING_DIM)
@@ -176,32 +173,53 @@ def compute_stats():
     return stats_cache
 
 
-# --- API Routes --------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load data, build embeddings, and prepare the search engine."""
+    print("\n" + "=" * 60)
+    print("  RAG Customer Support System -- Starting Up")
+    print("=" * 60 + "\n")
 
+    total_start = time.time()
 
-@app.route("/")
-def serve_index():
-    return send_from_directory(STATIC_DIR, "index.html")
+    data = load_data()
+    kb = build_knowledge_base(data)
+    load_or_build_embeddings(kb)
+    compute_stats()
 
+    print(f"\n{'=' * 60}")
+    print(f"  [OK] System ready in {time.time()-total_start:.1f}s")
+    print(f"  [DATA] {len(data):,} total rows | {len(kb):,} indexed")
+    print(f"  [FAISS] index: {index.ntotal:,} vectors ({EMBEDDING_DIM}d)")
+    print(f"{'=' * 60}\n")
+    yield
+    print("Shutting down...")
 
-@app.route("/<path:path>")
-def serve_static(path):
-    return send_from_directory(STATIC_DIR, path)
+# --- FastAPI App -------------------------------------------------------------
+app = FastAPI(title="Customer Support RAG API", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.route("/api/search", methods=["POST"])
-def search():
-    """
-    Semantic search endpoint.
-    Body: { "query": "...", "category": "ALL" | "ORDER" | ..., "top_k": 10 }
-    """
-    data = request.get_json(force=True)
-    query = data.get("query", "").strip()
-    category_filter = data.get("category", "ALL").upper()
-    top_k = min(int(data.get("top_k", TOP_K_DEFAULT)), 50)
+class SearchRequest(BaseModel):
+    query: str
+    category: str = "ALL"
+    top_k: int = TOP_K_DEFAULT
+
+@app.post("/api/search")
+def search(request: SearchRequest):
+    """Semantic search endpoint."""
+    query = request.query.strip()
+    category_filter = request.category.upper()
+    top_k = min(request.top_k, 50)
 
     if not query:
-        return jsonify({"error": "Query cannot be empty"}), 400
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     start_time = time.time()
 
@@ -224,7 +242,7 @@ def search():
         cat = row["category"]
         if category_filter != "ALL" and cat != category_filter:
             continue
-        similarity = float(score) * 100  # Already cosine similarity (normalized vecs + IP)
+        similarity = float(score) * 100  # Already cosine similarity
         results.append(
             {
                 "instruction": str(row["instruction"]),
@@ -239,67 +257,38 @@ def search():
 
     elapsed = time.time() - start_time
 
-    return jsonify(
-        {
-            "query": query,
-            "category_filter": category_filter,
-            "num_results": len(results),
-            "search_time_ms": round(elapsed * 1000, 1),
-            "results": results,
-        }
-    )
+    return {
+        "query": query,
+        "category_filter": category_filter,
+        "num_results": len(results),
+        "search_time_ms": round(elapsed * 1000, 1),
+        "results": results,
+    }
 
 
-@app.route("/api/categories", methods=["GET"])
+@app.get("/api/categories")
 def get_categories():
     """Return all categories with counts."""
     if df is None:
-        return jsonify([])
+        return []
     cats = df["category"].value_counts().to_dict()
-    result = [{"name": k, "count": int(v)} for k, v in sorted(cats.items())]
-    return jsonify(result)
+    return [{"name": k, "count": int(v)} for k, v in sorted(cats.items())]
 
 
-@app.route("/api/stats", methods=["GET"])
+@app.get("/api/stats")
 def get_stats():
     """Return dataset statistics."""
-    return jsonify(stats_cache or compute_stats())
+    return stats_cache or compute_stats()
 
 
-@app.route("/api/intents", methods=["GET"])
-def get_intents():
+@app.get("/api/intents")
+def get_intents(category: str = "ALL"):
     """Return all intents with counts, optionally filtered by category."""
-    category = request.args.get("category", "ALL").upper()
-    filtered = df if category == "ALL" else df[df["category"] == category]
+    cat = category.upper()
+    filtered = df if cat == "ALL" else df[df["category"] == cat]
     intents = filtered["intent"].value_counts().to_dict()
-    result = [{"name": k, "count": int(v)} for k, v in sorted(intents.items())]
-    return jsonify(result)
-
-
-# --- Startup -----------------------------------------------------------------
-
-
-def initialize():
-    """Load data, build embeddings, and prepare the search engine."""
-    print("\n" + "=" * 60)
-    print("  RAG Customer Support System -- Starting Up")
-    print("=" * 60 + "\n")
-
-    total_start = time.time()
-
-    data = load_data()
-    kb = build_knowledge_base(data)
-    load_or_build_embeddings(kb)
-    compute_stats()
-
-    print(f"\n{'=' * 60}")
-    print(f"  [OK] System ready in {time.time()-total_start:.1f}s")
-    print(f"  [DATA] {len(data):,} total rows | {len(kb):,} indexed")
-    print(f"  [FAISS] index: {index.ntotal:,} vectors ({EMBEDDING_DIM}d)")
-    print(f"{'=' * 60}\n")
-
+    return [{"name": k, "count": int(v)} for k, v in sorted(intents.items())]
 
 if __name__ == "__main__":
-    initialize()
-    print("  [SERVER] Running at http://localhost:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
