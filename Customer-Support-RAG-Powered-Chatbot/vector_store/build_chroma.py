@@ -1,7 +1,7 @@
-from langchain.schema import Document
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import Chroma
-
+import pandas as pd
+from langchain_core.documents import Document
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
 docs = [
     Document(page_content="سياسة الإرجاع خلال 24 ساعة"),
     Document(page_content="يمكن استبدال المنتج خلال 7 أيام")
