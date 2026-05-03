@@ -259,7 +259,9 @@ def get_categories():
     result = [{"name": k, "count": int(v)} for k, v in sorted(cats.items())]
     return jsonify(result)
 
-
+@app.route("/chat", methods=["POST"])
+def chat_endpoint():
+    return jsonify({"response": "FastApi Done!"})
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
     """Return dataset statistics."""
