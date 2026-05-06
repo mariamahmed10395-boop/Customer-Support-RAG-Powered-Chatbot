@@ -37,3 +37,4 @@ __pycache__/
 # إذا استخدمتِ ملفات لحفظ كلمات السر أو الـ API Keys مستقبلاً
 .env
 Data
+embeddings_cache/

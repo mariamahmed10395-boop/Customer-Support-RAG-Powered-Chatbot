@@ -18,6 +18,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # Fix Windows console encoding
 if sys.platform == "win32":
@@ -198,6 +200,7 @@ async def lifespan(app: FastAPI):
 # --- FastAPI App -------------------------------------------------------------
 app = FastAPI(title="Customer Support RAG API", lifespan=lifespan)
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -205,7 +208,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+@app.get("/")
+def home():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 class SearchRequest(BaseModel):
     query: str
     category: str = "ALL"
