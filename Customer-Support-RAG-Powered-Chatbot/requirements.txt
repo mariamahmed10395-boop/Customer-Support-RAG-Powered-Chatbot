@@ -5,3 +5,5 @@ faiss-cpu
 pandas
 numpy
 pydantic
+PySide6
+requests
