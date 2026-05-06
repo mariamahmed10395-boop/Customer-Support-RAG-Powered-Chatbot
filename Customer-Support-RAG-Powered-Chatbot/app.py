@@ -21,17 +21,21 @@ from sentence_transformers import SentenceTransformer
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from pathlib import Path
+
 # Fix Windows console encoding
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # --- Configuration -----------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "Data", "customer_support_data.csv")
-CACHE_DIR = os.path.join(BASE_DIR, "embeddings_cache")
-MODEL_NAME = "all-MiniLM-L6-v2"
-EMBEDDING_DIM = 384
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR / "Data" / "customer_support_data.csv"
+CACHE_DIR = BASE_DIR / "embeddings_cache"
+STATIC_DIR = BASE_DIR / "static"
+
+MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
+EMBEDDING_DIM = 768
 TOP_K_DEFAULT = 10
 BATCH_SIZE = 512
 
@@ -91,21 +95,21 @@ def load_or_build_embeddings(kb):
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     data_hash = get_data_hash(DATA_PATH)
-    cache_meta_path = os.path.join(CACHE_DIR, "meta.json")
-    cache_emb_path = os.path.join(CACHE_DIR, "embeddings.npy")
-    cache_index_path = os.path.join(CACHE_DIR, "faiss.index")
+    cache_meta_path = CACHE_DIR / "meta.json"
+    cache_emb_path = CACHE_DIR / "embeddings.npy"
+    cache_index_path = CACHE_DIR / "faiss.index"
 
     # Check if cache is valid
     cache_valid = False
-    if os.path.exists(cache_meta_path):
+    if cache_meta_path.exists():
         with open(cache_meta_path, "r") as f:
             meta = json.load(f)
         if (
             meta.get("data_hash") == data_hash
             and meta.get("model") == MODEL_NAME
             and meta.get("num_entries") == len(kb)
-            and os.path.exists(cache_emb_path)
-            and os.path.exists(cache_index_path)
+            and cache_emb_path.exists()
+            and cache_index_path.exists()
         ):
             cache_valid = True
 
@@ -143,7 +147,7 @@ def load_or_build_embeddings(kb):
         # Save cache
         print("[*] Saving cache to disk...")
         np.save(cache_emb_path, embeddings)
-        faiss.write_index(index, cache_index_path)
+        faiss.write_index(index, cache_index_path.encode("utf-8").decode("utf-8"))
         with open(cache_meta_path, "w") as f:
             json.dump(
                 {
@@ -208,12 +212,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.get("/")
 def home():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    return FileResponse(STATIC_DIR / "index.html")
 class SearchRequest(BaseModel):
     query: str
     category: str = "ALL"
@@ -243,20 +246,33 @@ def search(request: SearchRequest):
     scores, indices = index.search(query_embedding, min(search_k, index.ntotal))
 
     results = []
+    seen_intents = set()
+
     for score, idx in zip(scores[0], indices[0]):
         if idx < 0:
             continue
+            
+        if score < 0.25:
+            continue
+            
         row = knowledge_base.iloc[int(idx)]
+        
+        intent = str(row["intent"])
+        if intent in seen_intents:
+            continue
+        seen_intents.add(intent)
+        
         cat = row["category"]
         if category_filter != "ALL" and cat != category_filter:
             continue
+            
         similarity = float(score) * 100  # Already cosine similarity
         results.append(
             {
                 "instruction": str(row["instruction"]),
                 "response": str(row["response"]),
                 "category": str(cat),
-                "intent": str(row["intent"]),
+                "intent": intent,
                 "similarity": round(max(0, min(100, similarity)), 1),
             }
         )
