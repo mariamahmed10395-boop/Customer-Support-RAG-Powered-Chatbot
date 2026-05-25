@@ -20,8 +20,10 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-
 from pathlib import Path
+from dotenv import load_dotenv
+from groq import Groq
+
 
 # Fix Windows console encoding
 if sys.platform == "win32":
@@ -29,6 +31,9 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # --- Configuration -----------------------------------------------------------
+# Load environment variables
+load_dotenv()
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = BASE_DIR / "Data" / "customer_support_data.csv"
 CACHE_DIR = BASE_DIR / "embeddings_cache"
@@ -38,6 +43,18 @@ MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 EMBEDDING_DIM = 768
 TOP_K_DEFAULT = 10
 BATCH_SIZE = 512
+
+# Initialize Groq client securely
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+groq_client = None
+if GROQ_API_KEY and GROQ_API_KEY.strip():
+    try:
+        groq_client = Groq(api_key=GROQ_API_KEY.strip())
+        print("[*] Groq Llama-3 client initialized successfully!")
+    except Exception as e:
+        print(f"[!] Failed to initialize Groq client: {e}")
+else:
+    print("[!] Warning: GROQ_API_KEY not set. Chat features will require setting the key in your .env file.")
 
 # Global state
 model = None
@@ -217,22 +234,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.get("/")
 def home():
     return FileResponse(STATIC_DIR / "index.html")
-class SearchRequest(BaseModel):
-    query: str
-    category: str = "ALL"
-    top_k: int = TOP_K_DEFAULT
-
-@app.post("/api/search")
-def search(request: SearchRequest):
-    """Semantic search endpoint."""
-    query = request.query.strip()
-    category_filter = request.category.upper()
-    top_k = min(request.top_k, 50)
-
-    if not query:
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-
-    start_time = time.time()
+def get_semantic_search_results(query: str, category_filter: str = "ALL", top_k: int = TOP_K_DEFAULT):
+    """Helper to query the FAISS index and return matching records."""
+    if model is None or index is None or knowledge_base is None:
+        return []
 
     # Encode query
     query_embedding = model.encode(
@@ -278,7 +283,26 @@ def search(request: SearchRequest):
         )
         if len(results) >= top_k:
             break
+            
+    return results
 
+class SearchRequest(BaseModel):
+    query: str
+    category: str = "ALL"
+    top_k: int = TOP_K_DEFAULT
+
+@app.post("/api/search")
+def search(request: SearchRequest):
+    """Semantic search endpoint."""
+    query = request.query.strip()
+    category_filter = request.category.upper()
+    top_k = min(request.top_k, 50)
+
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    start_time = time.time()
+    results = get_semantic_search_results(query, category_filter, top_k)
     elapsed = time.time() - start_time
 
     return {
@@ -288,6 +312,92 @@ def search(request: SearchRequest):
         "search_time_ms": round(elapsed * 1000, 1),
         "results": results,
     }
+
+class ChatRequest(BaseModel):
+    query: str
+    category: str = "ALL"
+    top_k: int = 5
+
+@app.post("/api/chat")
+def chat(request: ChatRequest):
+    """
+    RAG Chat endpoint using FAISS vector retrieval and Groq Llama-3 model.
+    """
+    query = request.query.strip()
+    category_filter = request.category.upper()
+    top_k = min(request.top_k, 20)
+
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    if not groq_client:
+        raise HTTPException(
+            status_code=503,
+            detail="Groq LLM service is not configured. Please add GROQ_API_KEY to your .env file."
+        )
+
+    # 1. Retrieve the top-k relevant customer support entries
+    results = get_semantic_search_results(query, category_filter, top_k)
+
+    # 2. Format retrieved Q&As into context string
+    if results:
+        context_blocks = []
+        for i, res in enumerate(results, 1):
+            context_blocks.append(
+                f"Document [{i}]:\n"
+                f"Category: {res['category']} | Intent: {res['intent']}\n"
+                f"Customer Question: {res['instruction']}\n"
+                f"Support Answer: {res['response']}"
+            )
+        context_str = "\n\n---\n\n".join(context_blocks)
+    else:
+        context_str = "No specific relevant customer support documents were found for this query."
+
+    # 3. Inject retrieved context into a structured system prompt
+    SYSTEM_PROMPT = """You are a highly helpful, polite, and intelligent customer support assistant.
+Your goal is to answer the customer's question accurately, professionally, and in a friendly support tone.
+
+GROUNDING RULES:
+1. Ground your answer strictly in the provided "Retrieved Context" below.
+2. Do not invent, hallucinate, or extrapolate facts or details not present in the context.
+3. If the retrieved context does not contain enough information to answer the question, politely inform the user that you do not possess that specific information and offer to escalate to a human support agent.
+4. Respond in the same language as the user's question (e.g., if the user asks in Arabic, respond in Arabic. If they ask in English, respond in English).
+
+Retrieved Context:
+{context}"""
+
+    # 4. Call Groq Llama-3 to generate the response
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT.format(context=context_str),
+                },
+                {
+                    "role": "user",
+                    "content": query,
+                }
+            ],
+            model="llama3-8b-8192",
+            temperature=0.2, # Keep temperature low to maximize factual correctness and grounding
+            max_tokens=1024,
+        )
+        generated_response = chat_completion.choices[0].message.content
+    except Exception as e:
+        print(f"[!] Error calling Groq API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating response from LLM: {str(e)}"
+        )
+
+    # 5. Return both the generated response and retrieved sources
+    return {
+        "query": query,
+        "response": generated_response,
+        "sources": results
+    }
+
 
 
 @app.get("/api/categories")
