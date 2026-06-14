@@ -1,277 +1,411 @@
+# 🎯 Customer Support RAG + Power BI
+
 <div align="center">
-🎯 Customer Support RAG + Power BI
-AI-Powered Customer Support with Real-Time Analytics Dashboard
-https://python.org
-https://openai.com
-https://powerbi.microsoft.com
-LICENSE
+
+### AI-Powered Customer Support with Real-Time Analytics Dashboard
+
+Build an intelligent customer support assistant using **Retrieval-Augmented Generation (RAG)**, combined with **Power BI dashboards** for real-time analytics and performance monitoring.
+
+![Python](https://img.shields.io/badge/Python-3.8+-blue)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT-green)
+![PowerBI](https://img.shields.io/badge/PowerBI-Analytics-yellow)
+![License](https://img.shields.io/badge/License-MIT-red)
+
 </div>
-📋 Table of Contents
 
-    Overview
-    Features
-    Architecture
-    Project Structure
-    Quick Start
-    Usage
-    API Reference
-    Configuration
-    Development
-    Roadmap
+---
 
-🔍 Overview
-A Retrieval-Augmented Generation (RAG) system that transforms raw customer support data into intelligent, context-aware AI responses. Integrated with Power BI for real-time analytics and performance monitoring.
+## 📖 Overview
 
-    💡 Why RAG? Combines the creativity of LLMs with the accuracy of your private knowledge base — no hallucinations, just facts.
+This project is an **AI-powered Customer Support Assistant** built using **Retrieval-Augmented Generation (RAG)**.
 
-✨ Features
-Table
-Feature Description Status
-🤖 AI Chatbot Context-aware responses powered by RAG ✅ Active
-🔍 Smart Retrieval FAISS/ChromaDB vector search ✅ Active
-⚡ Embedding Cache Pre-computed vectors for instant startup ✅ Active
-💻 Web Interface Clean, responsive chat UI ✅ Active
-📊 Power BI Dashboard Real-time support analytics ✅ Active
-🔄 Auto-Preprocessing Data cleaning & intelligent chunking ✅ Active
-🏗️ Architecture
-plain
+Instead of relying only on the LLM's memory, the system retrieves relevant information from your private knowledge base before generating responses, ensuring:
 
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ Data Sources │────▶│ Preprocessing │────▶│ Vector Storage │
-│ (CSV, APIs...) │ │ (Clean, Chunk) │ │ (FAISS/Chroma) │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-│
-▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ Power BI │◀────│ Analytics │◀────│ LLM Engine │
-│ Dashboard │ │ & Metrics │ │ (GPT + RAG) │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-▲
-│
+- ✅ Accurate answers with minimal hallucinations
+- ✅ Context-aware customer support
+- ✅ Fast semantic search using vector databases
+- ✅ Real-time analytics through Power BI
+- ✅ Easy integration with CSV files or APIs
+
+> **Why RAG?**
+>
+> RAG combines the reasoning capabilities of Large Language Models with the reliability of your own data, giving you factual and trustworthy responses.
+
+---
+
+# ✨ Features
+
+| Feature               | Description                            | Status |
+| --------------------- | -------------------------------------- | ------ |
+| 🤖 AI Chatbot         | Context-aware responses powered by RAG | ✅     |
+| 🔍 Smart Retrieval    | Semantic search using FAISS / ChromaDB | ✅     |
+| ⚡ Embedding Cache    | Pre-computed vectors for fast startup  | ✅     |
+| 💻 Web Interface      | Clean and responsive chat UI           | ✅     |
+| 📊 Power BI Dashboard | Real-time analytics & KPIs             | ✅     |
+| 🔄 Auto Preprocessing | Data cleaning and intelligent chunking | ✅     |
+
+---
+
+# 🏗️ Architecture
+
+```text
 ┌─────────────────┐
-│ Web Chat UI │
-│ (User Queries) │
-└─────────────────┘
+│ Data Sources    │
+│ (CSV, APIs...)  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Preprocessing   │
+│ Clean + Chunk   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Vector Storage  │
+│ FAISS / Chroma  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Retrieval       │
+│ Top-K Search    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ LLM + RAG       │
+│ GPT Responses   │
+└────────┬────────┘
+         │
+   ┌─────┴─────┐
+   ▼           ▼
+Web Chat    Power BI
+Interface   Dashboard
+```
 
-Data Flow
-Mermaid
-Code Preview
-Raw CSVPreprocessChunk & EmbedVector IndexUser QueryEmbed QueryRetrieve Top-KLLM + ContextResponsePower BI
-📁 Project Structure
-plain
+---
 
+# 📂 Project Structure
+
+```text
 Customer-Support-RAG-PowerBI/
-│
-├── 📂 Data/
-│ └── customer_support_data.csv # Raw support tickets & FAQs
-│
-├── 📂 Data_Preprocessing/
-│ ├── pipeline.py # ETL orchestration
-│ └── preprocess.py # Text cleaning & chunking
-│
-├── 📂 embeddings_cache/
-│ ├── embeddings.npy # Serialized vectors
-│ ├── faiss.index # Fast similarity index
-│ └── meta.json # ID-to-document mapping
-│
-├── 📂 static/ # 🎨 Frontend Assets
-│ ├── app.js # Chat logic & API calls
-│ ├── index.html # Main interface
-│ └── styles.css # Custom styling
-│
-├── 📂 vector_store/ # 🔧 Backend Core
-│ ├── build_chroma.py # ChromaDB builder
-│ ├── test_retrieval.py # Retrieval QA tests
-│ └── app.py # Flask/FastAPI server
-│
+
+├── Data/
+│   └── customer_support_data.csv
+
+├── Data_Preprocessing/
+│   ├── pipeline.py
+│   └── preprocess.py
+
+├── embeddings_cache/
+│   ├── embeddings.npy
+│   ├── faiss.index
+│   └── meta.json
+
+├── static/
+│   ├── app.js
+│   ├── index.html
+│   └── styles.css
+
+├── vector_store/
+│   ├── build_chroma.py
+│   ├── test_retrieval.py
+│   └── app.py
+
+├── tests/
+
 ├── .gitignore
-└── README.md # 📖 You are here
 
-🚀 Quick Start
-Prerequisites
+└── README.md
+```
 
-    Python 3.8+
-    OpenAI API key
-    Power BI Desktop (optional, for analytics)
+---
 
-1. Clone & Install
-   bash
+# 🚀 Quick Start
 
+## 1️⃣ Clone Repository
+
+```bash
 git clone https://github.com/yourusername/Customer-Support-RAG-PowerBI.git
+
 cd Customer-Support-RAG-PowerBI
+```
 
-# Create virtual environment
+---
 
+## 2️⃣ Create Virtual Environment
+
+```bash
 python -m venv venv
-source venv/bin/activate # Windows: venv\Scripts\activate
 
-# Install dependencies
+# Windows
+venv\Scripts\activate
 
+# Linux / Mac
+source venv/bin/activate
+```
+
+---
+
+## 3️⃣ Install Dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
-2. Configure Environment
-   bash
+---
 
-# .env file
+## 4️⃣ Configure Environment
 
+Create a `.env` file:
+
+```env
 OPENAI_API_KEY=sk-your-key-here
+
 EMBEDDING_MODEL=text-embedding-3-small
-LLM_MODEL=gpt-3.5-turbo
+
+LLM_MODEL=gpt-4o-mini
+
 TOP_K_RETRIEVAL=5
+
 CHUNK_SIZE=512
+
 CHUNK_OVERLAP=50
+```
 
-3. Prepare Data
-   bash
+---
 
-# Place your CSV in Data/ then run:
+## 5️⃣ Prepare Data
 
+Place your CSV file inside:
+
+```text
+Data/customer_support_data.csv
+```
+
+Then run:
+
+```bash
 python Data_Preprocessing/pipeline.py
 
-# Build vector index
-
 python vector_store/build_chroma.py
+```
 
-4. Launch 🚀
-   bash
+---
 
+## 6️⃣ Launch Application
+
+```bash
 python vector_store/app.py
+```
 
-    Open: http://localhost:5000
+Open:
 
-🖥️ Usage
-💬 Web Chat Interface
-bash
+```text
+http://localhost:5000
+```
 
-# Start the server
+---
 
+# 💬 Usage
+
+### Start Chat Server
+
+```bash
 python vector_store/app.py
+```
 
-Navigate to http://localhost:5000 — start chatting with your AI support agent.
-🔍 Test Retrieval
-bash
+Navigate to:
 
-# Interactive testing
+```text
+http://localhost:5000
+```
 
+Start chatting with your AI customer support assistant.
+
+---
+
+### Test Retrieval
+
+```bash
 python vector_store/test_retrieval.py
+```
 
-# Single query test
+Single query:
 
-python vector_store/test_retrieval.py --query "How do I reset my password?"
+```bash
+python vector_store/test_retrieval.py \
+--query "How do I reset my password?"
+```
 
-📊 Power BI Dashboard
+---
 
-    Open Power BI Desktop
-    Get Data → Web or CSV
-    Connect to your API endpoint or export data
-    Load the template: dashboard/customer_support.pbix
+# 📊 Power BI Dashboard
 
-📡 API Reference
-Endpoints
-Table
-Method Endpoint Description Payload
-GET / Chat UI —
-POST /api/chat Ask question {"query": "..."}
-GET /api/health Health check —
-GET /api/stats Support metrics —
-Example Request
-bash
+1. Open Power BI Desktop
+2. Click **Get Data**
+3. Select **CSV** or **Web API**
+4. Connect to your exported data
+5. Load:
 
+```text
+dashboard/customer_support.pbix
+```
+
+Monitor:
+
+- Customer satisfaction
+- Average response time
+- Ticket categories
+- Most common issues
+- Agent performance
+
+---
+
+# 📡 API Reference
+
+| Method | Endpoint      | Description       |
+| ------ | ------------- | ----------------- |
+| GET    | `/`           | Chat UI           |
+| POST   | `/api/chat`   | Ask Question      |
+| GET    | `/api/health` | Health Check      |
+| GET    | `/api/stats`  | Analytics Metrics |
+
+### Example Request
+
+```bash
 curl -X POST http://localhost:5000/api/chat \
- -H "Content-Type: application/json" \
- -d '{
-"query": "How do I track my order?",
-"session_id": "user_123"
+-H "Content-Type: application/json" \
+-d '{
+  "query":"How do I track my order?",
+  "session_id":"user_123"
 }'
+```
 
-Example Response
-JSON
+### Example Response
 
+```json
 {
-"answer": "You can track your order by visiting the 'Orders' section...",
-"sources": [
-{"id": "doc_42", "score": 0.94, "snippet": "..."}
-],
-"confidence": 0.92,
-"response_time_ms": 340
+  "answer": "You can track your order from the Orders section.",
+
+  "sources": [
+    {
+      "id": "doc_42",
+      "score": 0.94,
+      "snippet": "..."
+    }
+  ],
+
+  "confidence": 0.92,
+
+  "response_time_ms": 340
 }
+```
 
-⚙️ Configuration
-Table
-Parameter File Default Description
-CHUNK_SIZE preprocess.py 512 Tokens per document chunk
-CHUNK_OVERLAP preprocess.py 50 Overlap between chunks
-TOP_K app.py 5 Retrieved documents per query
-TEMPERATURE app.py 0.3 LLM creativity (0-1)
-MAX_TOKENS app.py 512 Max response length
-EMBEDDING_MODEL build_chroma.py text-embedding-3-small OpenAI embedding model
-🛠️ Development
-Running Tests
-bash
+---
 
-# Test retrieval accuracy
+# ⚙️ Configuration
 
+| Parameter       | Default                |
+| --------------- | ---------------------- |
+| CHUNK_SIZE      | 512                    |
+| CHUNK_OVERLAP   | 50                     |
+| TOP_K           | 5                      |
+| TEMPERATURE     | 0.3                    |
+| MAX_TOKENS      | 512                    |
+| EMBEDDING_MODEL | text-embedding-3-small |
+
+---
+
+# 🛠️ Development
+
+### Run Tests
+
+```bash
 pytest tests/test_retrieval.py -v
 
-# Test API endpoints
-
 pytest tests/test_api.py -v
+```
 
-Rebuilding the Knowledge Base
-bash
+### Rebuild Knowledge Base
 
-# Clean old embeddings
-
-rm -rf embeddings_cache/\*
-
-# Re-run pipeline
+```bash
+rm -rf embeddings_cache/*
 
 python Data_Preprocessing/pipeline.py
+
 python vector_store/build_chroma.py
+```
 
-Adding Custom Data
+---
 
-    Add CSV to Data/customer_support_data.csv
-    Ensure columns: question, answer, category, priority
-    Rebuild index (see above)
+# 🗺️ Roadmap
 
-🗺️ Roadmap
+- ✅ Core RAG Pipeline
+- ✅ Web Chat Interface
+- ✅ Power BI Integration
+- ✅ FAISS Support
+- ✅ ChromaDB Support
+- ⏳ Multi-language Support
+- ⏳ Conversation Memory
+- ⏳ User Feedback Loop
+- ⏳ Teams & Slack Integration
+- ⏳ Fine-Tuned Domain Model
 
-    [x] Core RAG pipeline
-    [x] Web chat interface
-    [x] Power BI integration
-    [x] FAISS + ChromaDB support
-    [ ] 🌐 Multi-language support (Q3 2026)
-    [ ] 💬 Conversation history & context (Q3 2026)
-    [ ] 👍 User feedback loop (Q4 2026)
-    [ ] 🔗 Teams/Slack integration (Q4 2026)
-    [ ] 🧠 Fine-tuned domain model (2027)
+---
 
-🧰 Tech Stack
+# 🧰 Tech Stack
+
+| Layer           | Technology                |
+| --------------- | ------------------------- |
+| Vector Database | FAISS · ChromaDB          |
+| Embeddings      | OpenAI text-embedding-3   |
+| LLM             | GPT-4o / Azure OpenAI     |
+| Backend         | Flask / FastAPI           |
+| Frontend        | HTML5 · CSS3 · Vanilla JS |
+| Analytics       | Microsoft Power BI        |
+| Data Processing | Pandas · NumPy            |
+
+---
+
+# 🤝 Contributing
+
+1. Fork the repository
+2. Create a branch
+
+```bash
+git checkout -b feature/amazing-feature
+```
+
+3. Commit changes
+
+```bash
+git commit -m "Add amazing feature"
+```
+
+4. Push changes
+
+```bash
+git push origin feature/amazing-feature
+```
+
+5. Open a Pull Request
+
+---
+
+# 📄 License
+
+Distributed under the **MIT License**.
+
+See the `LICENSE` file for more information.
+
+---
 
 <div align="center">
-Table
-Layer	Technology
-Vector DB	FAISS · ChromaDB
-Embeddings	OpenAI text-embedding-3
-LLM	OpenAI GPT / Azure OpenAI
-Backend	Flask / FastAPI
-Frontend	Vanilla JS · HTML5 · CSS3
-Analytics	Microsoft Power BI
-Data	Pandas · NumPy · CSV
-</div>
-🤝 Contributing
 
-    Fork the repository
-    Create a feature branch: git checkout -b feature/amazing-feature
-    Commit changes: git commit -m 'Add amazing feature'
-    Push to branch: git push origin feature/amazing-feature
-    Open a Pull Request
+### ⭐ If you like this project, give it a star!
 
-📄 License
-Distributed under the MIT License. See LICENSE for details.
+Built with ❤️ to create better customer experiences.
 
-<div align="center">
-⬆ Back to Top
-Built with ❤️ for better customer experiences
 </div>
