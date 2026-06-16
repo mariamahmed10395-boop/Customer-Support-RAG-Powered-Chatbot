@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 from dotenv import load_dotenv
 from groq import Groq
+from agent_brain.graph import customer_rag_graph
 
 
 # Fix Windows console encoding
@@ -139,7 +140,7 @@ def load_or_build_embeddings(kb):
     if cache_valid:
         print("[*] Loading cached embeddings & FAISS index...")
         start = time.time()
-        index = faiss.read_index(cache_index_path)
+        index = faiss.read_index(str(cache_index_path))
         print(f"    [OK] Cache loaded in {time.time()-start:.1f}s")
     else:
         print("[*] Generating embeddings (this may take a few minutes on first run)...")
@@ -164,7 +165,7 @@ def load_or_build_embeddings(kb):
         # Save cache
         print("[*] Saving cache to disk...")
         np.save(cache_emb_path, embeddings)
-        faiss.write_index(index, cache_index_path.encode("utf-8").decode("utf-8"))
+        faiss.write_index(index, str(cache_index_path))
         with open(cache_meta_path, "w") as f:
             json.dump(
                 {
@@ -318,10 +319,23 @@ class ChatRequest(BaseModel):
     category: str = "ALL"
     top_k: int = 5
 
+SYSTEM_PROMPT = """You are a highly helpful, polite, and intelligent customer support assistant.
+Your goal is to answer the customer's question accurately, professionally, and in a friendly support tone.
+
+GROUNDING RULES:
+1. Ground your answer strictly in the provided "Retrieved Context" below.
+2. Do not invent, hallucinate, or extrapolate facts or details not present in the context.
+3. If the retrieved context does not contain enough information to answer the question, politely inform the user that you do not possess that specific information and offer to escalate to a human support agent.
+4. Respond in the same language as the user's question (e.g., if the user asks in Arabic, respond in Arabic. If they ask in English, respond in English).
+
+Retrieved Context:
+{context}"""
+
+
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     """
-    RAG Chat endpoint using FAISS vector retrieval and Groq Llama-3 model.
+    RAG Chat endpoint using Basmala's LangGraph Workflow from agent_brain/graph.py.
     """
     query = request.query.strip()
     category_filter = request.category.upper()
@@ -336,68 +350,24 @@ def chat(request: ChatRequest):
             detail="Groq LLM service is not configured. Please add GROQ_API_KEY to your .env file."
         )
 
-    # 1. Retrieve the top-k relevant customer support entries
-    results = get_semantic_search_results(query, category_filter, top_k)
-
-    # 2. Format retrieved Q&As into context string
-    if results:
-        context_blocks = []
-        for i, res in enumerate(results, 1):
-            context_blocks.append(
-                f"Document [{i}]:\n"
-                f"Category: {res['category']} | Intent: {res['intent']}\n"
-                f"Customer Question: {res['instruction']}\n"
-                f"Support Answer: {res['response']}"
-            )
-        context_str = "\n\n---\n\n".join(context_blocks)
-    else:
-        context_str = "No specific relevant customer support documents were found for this query."
-
-    # 3. Inject retrieved context into a structured system prompt
-    SYSTEM_PROMPT = """You are a highly helpful, polite, and intelligent customer support assistant.
-Your goal is to answer the customer's question accurately, professionally, and in a friendly support tone.
-
-GROUNDING RULES:
-1. Ground your answer strictly in the provided "Retrieved Context" below.
-2. Do not invent, hallucinate, or extrapolate facts or details not present in the context.
-3. If the retrieved context does not contain enough information to answer the question, politely inform the user that you do not possess that specific information and offer to escalate to a human support agent.
-4. Respond in the same language as the user's question (e.g., if the user asks in Arabic, respond in Arabic. If they ask in English, respond in English).
-
-Retrieved Context:
-{context}"""
-
-    # 4. Call Groq Llama-3 to generate the response
     try:
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT.format(context=context_str),
-                },
-                {
-                    "role": "user",
-                    "content": query,
-                }
-            ],
-            model="llama3-8b-8192",
-            temperature=0.2, # Keep temperature low to maximize factual correctness and grounding
-            max_tokens=1024,
-        )
-        generated_response = chat_completion.choices[0].message.content
+        graph_inputs = {
+            "query": query,
+            "category_filter": category_filter,
+            "top_k": top_k
+        }
+        graph_output = customer_rag_graph.invoke(graph_inputs)
+        
+        return {
+            "query": query,
+            "response": graph_output["response"],
+            "sources": graph_output["sources"]
+        }
     except Exception as e:
-        print(f"[!] Error calling Groq API: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error generating response from LLM: {str(e)}"
+            detail=f"Error executing LangGraph pipeline: {str(e)}"
         )
-
-    # 5. Return both the generated response and retrieved sources
-    return {
-        "query": query,
-        "response": generated_response,
-        "sources": results
-    }
-
 
 
 @app.get("/api/categories")
