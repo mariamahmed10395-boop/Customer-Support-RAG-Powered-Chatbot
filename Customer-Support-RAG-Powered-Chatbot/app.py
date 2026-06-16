@@ -23,10 +23,6 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 from dotenv import load_dotenv
 from groq import Groq
-
-# ---------------------------------------------------------------------------
-# [إضافة بسملة]: استيراد الـ LangGraph المنفصل الخاص بـ بسملة من فولدرها بأمان
-# ---------------------------------------------------------------------------
 from agent_brain.graph import customer_rag_graph
 
 
@@ -323,7 +319,6 @@ class ChatRequest(BaseModel):
     category: str = "ALL"
     top_k: int = 5
 
-# الـ SYSTEM_PROMPT العام متاح هنا لأجل الـ Graph الخارجي لـ بسملة
 SYSTEM_PROMPT = """You are a highly helpful, polite, and intelligent customer support assistant.
 Your goal is to answer the customer's question accurately, professionally, and in a friendly support tone.
 
@@ -355,16 +350,13 @@ def chat(request: ChatRequest):
             detail="Groq LLM service is not configured. Please add GROQ_API_KEY to your .env file."
         )
 
-    # ---------------------------------------------------------------------------
-    # [تعديل بسملة الحقيقي]: تشغيل الـ LangGraph المستدعى من فولدرك الخارجي بأمان
-    # ---------------------------------------------------------------------------
+    
     try:
         graph_inputs = {
             "query": query,
             "category_filter": category_filter,
             "top_k": top_k
         }
-        # استدعاء الـ Graph الخارجي لبسملة وتشغيله
         graph_output = customer_rag_graph.invoke(graph_inputs)
         
         return {
