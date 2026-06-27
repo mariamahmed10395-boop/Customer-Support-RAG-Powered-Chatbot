@@ -350,13 +350,14 @@ def chat(request: ChatRequest):
             detail="Groq LLM service is not configured. Please add GROQ_API_KEY to your .env file."
         )
 
-    
+
     try:
         graph_inputs = {
             "query": query,
             "category_filter": category_filter,
             "top_k": top_k
         }
+        
         graph_output = customer_rag_graph.invoke(graph_inputs)
         
         return {
