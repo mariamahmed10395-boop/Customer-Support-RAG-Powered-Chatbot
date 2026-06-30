@@ -176,7 +176,7 @@ async function performSearch() {
         resultsGrid.innerHTML = `
             <div class="empty-state">
                 <h2 class="empty-state__title" style="color: var(--accent-danger)">Search Error</h2>
-                <p class="empty-state__text">Could not reach the server. Make sure the Flask backend is running.</p>
+                <p class="empty-state__text">Could not reach the server. Make sure the FastAPI backend is running.</p>
             </div>
         `;
     } finally {
@@ -188,12 +188,27 @@ async function performSearch() {
 // ─── Render Results ─────────────────────────────────────────────────────────
 function sortAndRenderResults() {
     let results = [...currentResults];
+    
+    // Ensure unique intents only
+    const seenIntents = new Set();
+    results = results.filter(r => {
+        if (seenIntents.has(r.intent)) return false;
+        seenIntents.add(r.intent);
+        return true;
+    });
+
     const sort = sortSelect.value;
 
     if (sort === 'category') {
         results.sort((a, b) => a.category.localeCompare(b.category));
+    } else {
+        // Ensure sorted by similarity descending
+        results.sort((a, b) => b.similarity - a.similarity);
     }
-    // 'relevance' is default order from API
+    
+    if (resultsCount) {
+        resultsCount.textContent = results.length;
+    }
 
     renderResults(results);
 }

@@ -1,2 +1,5 @@
-Data
-
+.env
+# Ignore Vector Database and Embeddings Cache
+embeddings_cache/
+*.npy
+*.index
