@@ -20,7 +20,7 @@ with open(os.path.join(cache_dir, "meta.json"), "r", encoding="utf-8") as f:
     else:
         meta_data = kb_data
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
 def get_relevant_context(query: str, k: int = 3):
     """
