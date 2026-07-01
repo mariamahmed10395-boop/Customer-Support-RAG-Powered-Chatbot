@@ -232,9 +232,11 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 @app.get("/")
 def home():
     return FileResponse(STATIC_DIR / "index.html")
+
 def get_semantic_search_results(query: str, category_filter: str = "ALL", top_k: int = TOP_K_DEFAULT):
     """Helper to query the FAISS index and return matching records."""
     if model is None or index is None or knowledge_base is None:
@@ -318,18 +320,7 @@ class ChatRequest(BaseModel):
     query: str
     category: str = "ALL"
     top_k: int = 5
-
-SYSTEM_PROMPT = """You are a highly helpful, polite, and intelligent customer support assistant.
-Your goal is to answer the customer's question accurately, professionally, and in a friendly support tone.
-
-GROUNDING RULES:
-1. Ground your answer strictly in the provided "Retrieved Context" below.
-2. Do not invent, hallucinate, or extrapolate facts or details not present in the context.
-3. If the retrieved context does not contain enough information to answer the question, politely inform the user that you do not possess that specific information and offer to escalate to a human support agent.
-4. Respond in the same language as the user's question (e.g., if the user asks in Arabic, respond in Arabic. If they ask in English, respond in English).
-
-Retrieved Context:
-{context}"""
+    thread_id: str = "default_session"  # ممرر هنا لربط الجلسات من الفرونت
 
 
 @app.post("/api/chat")
@@ -340,6 +331,7 @@ def chat(request: ChatRequest):
     query = request.query.strip()
     category_filter = request.category.upper()
     top_k = min(request.top_k, 20)
+    thread_id = request.thread_id.strip()
 
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -350,20 +342,24 @@ def chat(request: ChatRequest):
             detail="Groq LLM service is not configured. Please add GROQ_API_KEY to your .env file."
         )
 
-
     try:
+        # إعداد الـ Inputs متوافقة مع الـ Graph State
         graph_inputs = {
             "query": query,
-            "category_filter": category_filter,
-            "top_k": top_k
+            "messages": []  # الـ LangGraph يسحب الـ History تلقائياً عبر الـ Checkpointer وبناء على الـ thread_id
         }
         
-        graph_output = customer_rag_graph.invoke(graph_inputs)
+        # تمرير الـ thread_id لإدارة الذاكرة المستمرة لجلسة الشات
+        thread_config = {"configurable": {"thread_id": thread_id}}
+        
+        # استدعاء الـ LangGraph Pipeline
+        graph_output = customer_rag_graph.invoke(graph_inputs, config=thread_config)
         
         return {
             "query": query,
-            "response": graph_output["response"],
-            "sources": graph_output["sources"]
+            "response": graph_output.get("response", ""),
+            "transfer_to_human": graph_output.get("transfer_to_human", False),  # الفلاج الحيوي للباك والفرونت
+            "thread_id": thread_id
         }
     except Exception as e:
         raise HTTPException(
