@@ -1,53 +1,50 @@
-"""
-Customer Support RAG Pipeline Runner
-====================================
-This file is responsible for executing all RAG preprocessing steps.
-It acts as a bridge between the Preprocessor class and the Application (UI/Server).
-"""
+import os
+import faiss
+import numpy as np
+import json
+from sentence_transformers import SentenceTransformer
 
-# Import your professional class
-try:
-    from .preprocess import CustomerDataPreprocessor
-except ImportError:
-    from preprocess import CustomerDataPreprocessor
 
-def run_customer_pipeline(file_path):
+cache_dir = "Customer-Support-RAG-Powered-Chatbot/embeddings_cache"
+if not os.path.exists(cache_dir):
+    cache_dir = "embeddings_cache"
+
+
+index = faiss.read_index(os.path.join(cache_dir, "faiss.index"))
+
+with open(os.path.join(cache_dir, "meta.json"), "r", encoding="utf-8") as f:
+    meta_data = json.load(f)
+
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def get_relevant_context(query: str, k: int = 3):
     """
-    This function executes the full RAG preprocessing pipeline.
-
-    Parameters:
-    file_path (str): Path to the customer support CSV file.
-
-    Returns:
-    pandas.DataFrame: The final processed dataset containing 'context' chunks.
+    دالة تأخذ سؤال العميل وترجع أقرب k سياقات (Context) من قاعدة البيانات
+    مخصصة للاستخدام مباشرة داخل LangGraph أو FastAPI
     """
-
-    # 1. Initialize the preprocessor object
-    pipeline = CustomerDataPreprocessor(file_path)
-
-    # 2. Execute preprocessing steps in sequence (Method Chaining)
-    # Notice: We follow the specific steps for NLP/RAG
-    (pipeline.load_data()
-             .clean_data()
-             .process_texts()
-             .build_knowledge_chunks())
-
-    # 3. Retrieve the final dataset
-    df_final = pipeline.df_processed
-
-    print("\n[SUCCESS] RAG Pipeline executed successfully!")
-    print(f"[INFO] Final Knowledge Base Size: {len(df_final)} entries.")
-
-    return df_final
+    try:
+       
+        query_vector = model.encode([query], convert_to_numpy=True)
+        
+       
+        distances, indices = index.search(query_vector, k)
+        
+        context_list = []
+        for idx in indices[0]:
+            if idx < len(meta_data):
+                item = meta_data[idx]
+                
+                context_list.append(item.get('context', f"السؤال: {item['question']}\nالإجابة: {item['answer']}"))
+        
+        
+        return "\n\n".join(context_list)
+    except Exception as e:
+        print(f"Error in retrieval: {e}")
+        return ""
 
 
 if __name__ == "__main__":
-    # Update this path to your actual CSV file location
-    DATA_PATH = r'C:\Users\modern\OneDrive\Desktop\Customer-Support-RAG-Powered-Chatbot\Customer-Support-RAG-Powered-Chatbot\Data_Preprocessing\customer_support_data.csv'
-    
-    # Run the pipeline
-    final_data = run_customer_pipeline(DATA_PATH)
-    
-    # Display sample to verify
-    print("\n--- Sample of Processed Knowledge (Context) ---")
-    print(final_data['context'].head(2).values)
+    test_query = "طريقة استرجاع الطلب أو المنتج"
+    print("--- جاري تجربة الـ Retriever المطور ---")
+    print(get_relevant_context(test_query, k=2))
