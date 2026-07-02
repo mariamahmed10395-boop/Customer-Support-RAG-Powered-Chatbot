@@ -4,10 +4,10 @@
 
 ### AI-Powered Customer Support with Real-Time Analytics Dashboard
 
-Build an intelligent customer support assistant using **Retrieval-Augmented Generation (RAG)**, combined with **Power BI dashboards** for real-time analytics and performance monitoring.
+Build an intelligent customer support assistant using **Retrieval-Augmented Generation (RAG)** and **LangGraph**, combined with **Power BI dashboards** for real-time analytics and performance monitoring.
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue)
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT-green)
+![Python](https://img.shields.io/badge/Python-3.11+-blue)
+![Groq](https://img.shields.io/badge/Groq-Llama3-orange)
 ![PowerBI](https://img.shields.io/badge/PowerBI-Analytics-yellow)
 ![License](https://img.shields.io/badge/License-MIT-red)
 
@@ -17,12 +17,12 @@ Build an intelligent customer support assistant using **Retrieval-Augmented Gene
 
 ## 📖 Overview
 
-This project is an **AI-powered Customer Support Assistant** built using **Retrieval-Augmented Generation (RAG)**.
+This project is an **AI-powered Customer Support Assistant** built using **Retrieval-Augmented Generation (RAG)** and **LangGraph agentic workflow**.
 
 Instead of relying only on the LLM's memory, the system retrieves relevant information from your private knowledge base before generating responses, ensuring:
 
 - ✅ Accurate answers with minimal hallucinations
-- ✅ Context-aware customer support
+- ✅ Context-aware customer support with multi-turn memory
 - ✅ Fast semantic search using vector databases
 - ✅ Real-time analytics through Power BI
 - ✅ Easy integration with CSV files or APIs
@@ -35,14 +35,15 @@ Instead of relying only on the LLM's memory, the system retrieves relevant infor
 
 # ✨ Features
 
-| Feature               | Description                            | Status |
-| --------------------- | -------------------------------------- | ------ |
-| 🤖 AI Chatbot         | Context-aware responses powered by RAG | ✅     |
-| 🔍 Smart Retrieval    | Semantic search using FAISS / ChromaDB | ✅     |
-| ⚡ Embedding Cache    | Pre-computed vectors for fast startup  | ✅     |
-| 💻 Web Interface      | Clean and responsive chat UI           | ✅     |
-| 📊 Power BI Dashboard | Real-time analytics & KPIs             | ✅     |
-| 🔄 Auto Preprocessing | Data cleaning and intelligent chunking | ✅     |
+| Feature                | Description                                           | Status |
+| --------------------- | ------------------------------------------------------ | ------  |
+| 🤖 AI Chatbot         | Context-aware responses powered by LangGraph & Llama-3 | ✅     |
+| 🔍 Smart Retrieval    | Semantic search using FAISS / ChromaDB                 | ✅     |
+| ⚡ Embedding Cache    | Pre-computed vectors for fast startup (< 0.2 seconds)  | ✅     |
+| 💻 Web Interface      | Clean and responsive chat UI (Port 8000)               | ✅     |
+| 📊 Power BI Dashboard | Real-time analytics & KPIs                             | ✅     |
+| 🔄 Auto Preprocessing | Data cleaning and intelligent deduplication            | ✅     |
+| 🔀 Intelligent Handoff| Automatic routing and transfer_to_human flag routing   | ✅     |
 
 ---
 
@@ -74,8 +75,8 @@ Instead of relying only on the LLM's memory, the system retrieves relevant infor
          │
          ▼
 ┌─────────────────┐
-│ LLM + RAG       │
-│ GPT Responses   │
+│ LangGraph Agent │
+│ Llama-3 (Groq)  │
 └────────┬────────┘
          │
    ┌─────┴─────┐
@@ -91,6 +92,13 @@ Interface   Dashboard
 ```text
 Customer-Support-RAG-PowerBI/
 
+├── agent_brain/
+│   ├── __init__.py
+│   └── graph.py
+
+├── customer_support_data/
+│   └── data_preprocessing.ipynb
+
 ├── Data/
 │   └── customer_support_data.csv
 
@@ -103,6 +111,13 @@ Customer-Support-RAG-PowerBI/
 │   ├── faiss.index
 │   └── meta.json
 
+├── frontend/
+│   ├── public/
+│   └── src/
+
+├── Llama/
+│   └── LLama.py
+
 ├── static/
 │   ├── app.js
 │   ├── index.html
@@ -110,10 +125,14 @@ Customer-Support-RAG-PowerBI/
 
 ├── vector_store/
 │   ├── build_chroma.py
-│   ├── test_retrieval.py
-│   └── app.py
+│   └── test_retrieval.py
 
-├── tests/
+├── .env
+├── app.py
+├── desktop_app.py
+├── main_ui.py
+├── requirements.txt
+└── retriever.py
 
 ├── .gitignore
 
@@ -161,17 +180,13 @@ pip install -r requirements.txt
 Create a `.env` file:
 
 ```env
-OPENAI_API_KEY=sk-your-key-here
+GROQ_API_KEY=your_groq_api_key_here
 
-EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2
 
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=llama3-8b-8192
 
 TOP_K_RETRIEVAL=5
-
-CHUNK_SIZE=512
-
-CHUNK_OVERLAP=50
 ```
 
 ---
@@ -197,13 +212,13 @@ python vector_store/build_chroma.py
 ## 6️⃣ Launch Application
 
 ```bash
-python vector_store/app.py
+python app.py
 ```
 
 Open:
 
 ```text
-http://localhost:5000
+http://localhost:8000
 ```
 
 ---
@@ -213,13 +228,13 @@ http://localhost:5000
 ### Start Chat Server
 
 ```bash
-python vector_store/app.py
+python app.py
 ```
 
 Navigate to:
 
 ```text
-http://localhost:5000
+http://localhost:8000
 ```
 
 Start chatting with your AI customer support assistant.
@@ -229,13 +244,13 @@ Start chatting with your AI customer support assistant.
 ### Test Retrieval
 
 ```bash
-python vector_store/test_retrieval.py
+python retriever.py
 ```
 
 Single query:
 
 ```bash
-python vector_store/test_retrieval.py \
+python retriever.py \
 --query "How do I reset my password?"
 ```
 
@@ -269,17 +284,17 @@ Monitor:
 | ------ | ------------- | ----------------- |
 | GET    | `/`           | Chat UI           |
 | POST   | `/api/chat`   | Ask Question      |
-| GET    | `/api/health` | Health Check      |
+| POST   | `/api/search` | Semantic Search   |
 | GET    | `/api/stats`  | Analytics Metrics |
 
 ### Example Request
 
 ```bash
-curl -X POST http://localhost:5000/api/chat \
+curl -X POST http://localhost:8000/api/chat \
 -H "Content-Type: application/json" \
 -d '{
   "query":"How do I track my order?",
-  "session_id":"user_123"
+  "thread_id":"session_123"
 }'
 ```
 
@@ -287,19 +302,10 @@ curl -X POST http://localhost:5000/api/chat \
 
 ```json
 {
-  "answer": "You can track your order from the Orders section.",
-
-  "sources": [
-    {
-      "id": "doc_42",
-      "score": 0.94,
-      "snippet": "..."
-    }
-  ],
-
-  "confidence": 0.92,
-
-  "response_time_ms": 340
+  "query": "How do I track my order?",
+  "response": "You can track your order from the Orders section.",
+  "transfer_to_human": false,
+  "thread_id": "session_123"
 }
 ```
 
@@ -309,24 +315,14 @@ curl -X POST http://localhost:5000/api/chat \
 
 | Parameter       | Default                |
 | --------------- | ---------------------- |
-| CHUNK_SIZE      | 512                    |
-| CHUNK_OVERLAP   | 50                     |
 | TOP_K           | 5                      |
 | TEMPERATURE     | 0.3                    |
-| MAX_TOKENS      | 512                    |
-| EMBEDDING_MODEL | text-embedding-3-small |
+| LLM_CORE	| Groq Llama-3           |
+| EMBEDDING_MODEL | all-mpnet-base-v2      |
 
 ---
 
 # 🛠️ Development
-
-### Run Tests
-
-```bash
-pytest tests/test_retrieval.py -v
-
-pytest tests/test_api.py -v
-```
 
 ### Rebuild Knowledge Base
 
@@ -347,6 +343,8 @@ python vector_store/build_chroma.py
 - ✅ Power BI Integration
 - ✅ FAISS Support
 - ✅ ChromaDB Support
+- ✅ Conversation Memory (LangGraph Checkpointers)
+- ✅ Human Agent Handoff Routing
 - ⏳ Multi-language Support
 - ⏳ Conversation Memory
 - ⏳ User Feedback Loop
@@ -358,14 +356,14 @@ python vector_store/build_chroma.py
 # 🧰 Tech Stack
 
 | Layer           | Technology                |
-| --------------- | ------------------------- |
-| Vector Database | FAISS · ChromaDB          |
-| Embeddings      | OpenAI text-embedding-3   |
-| LLM             | GPT-4o / Azure OpenAI     |
-| Backend         | Flask / FastAPI           |
-| Frontend        | HTML5 · CSS3 · Vanilla JS |
-| Analytics       | Microsoft Power BI        |
-| Data Processing | Pandas · NumPy            |
+| --------------- | ----------------------------------------- |
+| Vector Database | FAISS · ChromaDB                          |
+| Embeddings      | Sentence-Transformers (all-mpnet-base-v2) |
+| LLM             | Groq Llama-3 (Llama-3-8b-Instant)         |
+| Backend         | FastAPI                                   |
+| Frontend        | React.js (Vite) · Tailwind CSS            |
+| Analytics       | Microsoft Power BI                        |
+| Data Processing | Pandas · NumPy                            |
 
 ---
 
