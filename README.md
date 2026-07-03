@@ -390,22 +390,6 @@ git push origin feature/amazing-feature
 
 5. Open a Pull Request
 
----
-
-# 📄 License
-
-Distributed under the **MIT License**.
-
-See the `LICENSE` file for more information.
-
----
-
-<div align="center">
-
-### ⭐ If you like this project, give it a star!
-
-Built with ❤️ to create better customer experiences.
-
 # 🏗️ Architecture
 
 <p align="center">
@@ -429,3 +413,18 @@ Built with ❤️ to create better customer experiences.
     🎬 Click to Watch Demo
   </a>
 </p>
+---
+
+# 📄 License
+
+Distributed under the **MIT License**.
+
+See the `LICENSE` file for more information.
+
+---
+
+<div align="center">
+
+### ⭐ If you like this project, give it a star!
+
+Built with ❤️ to create better customer experiences.
