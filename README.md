@@ -35,15 +35,15 @@ Instead of relying only on the LLM's memory, the system retrieves relevant infor
 
 # ✨ Features
 
-| Feature                | Description                                           | Status |
-| --------------------- | ------------------------------------------------------ | ------  |
-| 🤖 AI Chatbot         | Context-aware responses powered by LangGraph & Llama-3 | ✅     |
-| 🔍 Smart Retrieval    | Semantic search using FAISS / ChromaDB                 | ✅     |
-| ⚡ Embedding Cache    | Pre-computed vectors for fast startup (< 0.2 seconds)  | ✅     |
-| 💻 Web Interface      | Clean and responsive chat UI (Port 8000)               | ✅     |
-| 📊 Power BI Dashboard | Real-time analytics & KPIs                             | ✅     |
-| 🔄 Auto Preprocessing | Data cleaning and intelligent deduplication            | ✅     |
-| 🔀 Intelligent Handoff| Automatic routing and transfer_to_human flag routing   | ✅     |
+| Feature                | Description                                            | Status |
+| ---------------------- | ------------------------------------------------------ | ------ |
+| 🤖 AI Chatbot          | Context-aware responses powered by LangGraph & Llama-3 | ✅     |
+| 🔍 Smart Retrieval     | Semantic search using FAISS / ChromaDB                 | ✅     |
+| ⚡ Embedding Cache     | Pre-computed vectors for fast startup (< 0.2 seconds)  | ✅     |
+| 💻 Web Interface       | Clean and responsive chat UI (Port 8000)               | ✅     |
+| 📊 Power BI Dashboard  | Real-time analytics & KPIs                             | ✅     |
+| 🔄 Auto Preprocessing  | Data cleaning and intelligent deduplication            | ✅     |
+| 🔀 Intelligent Handoff | Automatic routing and transfer_to_human flag routing   | ✅     |
 
 ---
 
@@ -313,12 +313,12 @@ curl -X POST http://localhost:8000/api/chat \
 
 # ⚙️ Configuration
 
-| Parameter       | Default                |
-| --------------- | ---------------------- |
-| TOP_K           | 5                      |
-| TEMPERATURE     | 0.3                    |
-| LLM_CORE	| Groq Llama-3           |
-| EMBEDDING_MODEL | all-mpnet-base-v2      |
+| Parameter       | Default           |
+| --------------- | ----------------- |
+| TOP_K           | 5                 |
+| TEMPERATURE     | 0.3               |
+| LLM_CORE        | Groq Llama-3      |
+| EMBEDDING_MODEL | all-mpnet-base-v2 |
 
 ---
 
@@ -355,7 +355,7 @@ python vector_store/build_chroma.py
 
 # 🧰 Tech Stack
 
-| Layer           | Technology                |
+| Layer           | Technology                                |
 | --------------- | ----------------------------------------- |
 | Vector Database | FAISS · ChromaDB                          |
 | Embeddings      | Sentence-Transformers (all-mpnet-base-v2) |
@@ -406,4 +406,26 @@ See the `LICENSE` file for more information.
 
 Built with ❤️ to create better customer experiences.
 
-</div>
+# 🏗️ Architecture
+
+<p align="center">
+  <img src="images/final1.PNG" alt="System Architecture" width="800"/>
+</p>
+
+---
+
+# 💬 Usage
+
+### Web Chat Interface
+
+<p align="center">
+  <img src="images/final2.PNG" alt="Chatbot UI" width="700"/>
+</p>
+
+---
+
+<p align="center">
+  <a href="videos/demo.mp4">
+    🎬 Click to Watch Demo
+  </a>
+</p>
