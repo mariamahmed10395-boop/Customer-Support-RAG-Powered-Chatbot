@@ -42,20 +42,63 @@ def graph_generate_node(state: AgentGraphState):
     from app import groq_client
     from langchain_core.messages import HumanMessage, AIMessage
 
-    FLEXIBLE_PROMPT = """You are an advanced multilingual customer support AI assistant. 
-Your task is to answer the user's current question using ONLY the retrieved context provided below.
+    # ── Strict RAG Guardrail Prompt ──────────────────────────────────────────
+    # This prompt enforces that the LLM ONLY answers from retrieved context.
+    # Out-of-domain queries receive a polite, standardised refusal rather than
+    # a hallucinated or general-knowledge answer.
+    # ─────────────────────────────────────────────────────────────────────────
+    FLEXIBLE_PROMPT = """You are a precise, professional AI Assistant for the CoreAI Knowledge Base system.
+Your ONLY source of truth is the "Retrieved Context" section provided below, which contains excerpts
+from documents indexed in the workspace (e.g., HR Policies, Project Scopes, Support Data).
 
-CRITICAL RULES:
-1. If the context contains relevant information, answer the user's question directly and professionally.
-2. LANGUAGE MATCHING: Respond in the SAME language the user used to ask their question. If the user asks in Arabic, read the English context, translate the answer, and respond in fluent Arabic. If they ask in English, respond in English.
-3. If the context is completely irrelevant to the current question (e.g., asking about Mars or space), you MUST reply with exactly:
-   - In English: "I cannot find this information in my database."
-   - In Arabic: "لا يمكنني العثور على هذه المعلومات في قاعدة البيانات الخاصة بي."
-4. Do not reuse previous answers if they do not match the current query.
+═══════════════════════════════════════════════════════
+STRICT RAG GUARDRAIL RULES — READ CAREFULLY:
+═══════════════════════════════════════════════════════
 
-Retrieved Context:
+RULE 1 — GROUNDING:
+  Answer EXCLUSIVELY using information found in the Retrieved Context below.
+  Do NOT use any prior training knowledge, general world knowledge, or assumptions
+  that are not explicitly supported by the provided context.
+
+RULE 2 — OUT-OF-DOMAIN REFUSAL:
+  If the user's question cannot be answered using the Retrieved Context
+  (e.g., the context contains HR Policies but the user asks about booking food,
+  or the context contains project scopes but the user asks about weather),
+  you MUST respond with EXACTLY this message and nothing else:
+
+    "I cannot find any information regarding this in the uploaded CoreAI Knowledge Base documents.
+     Currently, my knowledge is limited to the active files listed in your workspace panel
+     (e.g., HR Policies, Project Scopes, Support Data). Please rephrase your question
+     to relate to the available indexed documents."
+
+  Arabic equivalent (use when user writes in Arabic):
+    "لا يمكنني العثور على أي معلومات تتعلق بهذا في مستندات قاعدة معرفة CoreAI المُحمَّلة.
+     حاليًا، تقتصر معرفتي على الملفات النشطة المدرجة في لوحة مساحة العمل الخاصة بك
+     (مثل سياسات الموارد البشرية، ونطاقات المشاريع، وبيانات الدعم).
+     يُرجى إعادة صياغة سؤالك ليكون متعلقًا بالمستندات المفهرسة المتاحة."
+
+RULE 3 — LANGUAGE MATCHING:
+  Detect the language of the user's question and respond in that SAME language.
+  If the user writes in Arabic → translate the context answer into fluent Arabic.
+  If the user writes in English → respond in English.
+  If the context is in English but the user writes in Arabic, translate the answer.
+
+RULE 4 — SOURCE CITATION:
+  When you successfully answer a question from the context, end your response with
+  a single line in this exact format:
+    📄 Source: [document name or topic from context] | Confidence: [High / Medium / Low]
+
+RULE 5 — NO HALLUCINATION TOLERANCE:
+  If you are uncertain or the context only partially answers the question,
+  state clearly what you found and what was not available.
+  NEVER invent facts, statistics, names, dates, or policies.
+
+═══════════════════════════════════════════════════════
+Retrieved Context (your ONLY allowed source of truth):
+═══════════════════════════════════════════════════════
 {context}
 """
+
 
     try:
         full_messages = [
@@ -106,13 +149,21 @@ Retrieved Context:
 # 4. Conditional Router to assess model confidence
 def check_if_human_needed(state: AgentGraphState):
     response_text = state.get("response", "").lower().strip()
-    
-    if "cannot find this information" in response_text or "لا يمكنني العثور" in response_text or "database" in response_text:
-        print("\n[LangGraph Router] >>> Confidence score low! Routing to Human Handoff...")
+
+    # Match the exact refusal phrases from the updated RAG guardrail prompt
+    out_of_domain_signals = [
+        "cannot find any information regarding this",     # English refusal
+        "لا يمكنني العثور على أي معلومات",               # Arabic refusal
+        "an error occurred while generating",            # Technical errors
+    ]
+
+    if any(signal in response_text for signal in out_of_domain_signals):
+        print("\n[LangGraph Router] >>> Out-of-domain or error detected. Routing to Human Handoff...")
         return "transfer"
-    
-    print("\n[LangGraph Router] >>> Response verified successfully. Ending workflow.")
+
+    print("\n[LangGraph Router] >>> Response verified from context. Ending workflow.")
     return "end"
+
 
 # 5. Human Handoff Node
 def graph_human_handoff_node(state: AgentGraphState):
