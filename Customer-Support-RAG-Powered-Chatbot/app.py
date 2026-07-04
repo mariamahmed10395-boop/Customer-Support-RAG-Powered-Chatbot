@@ -10,16 +10,17 @@ import sys
 import json
 import time
 import hashlib
+import asyncio
 import numpy as np
 import pandas as pd
 import faiss
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pathlib import Path
 from dotenv import load_dotenv
 from groq import Groq
@@ -326,7 +327,8 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     """
-    RAG Chat endpoint using Basmala's LangGraph Workflow from agent_brain/graph.py.
+    RAG Chat endpoint using the LangGraph Workflow from agent_brain/graph.py.
+    Kept intact for backward compatibility with the PySide6 desktop client.
     """
     query = request.query.strip()
     category_filter = request.category.upper()
@@ -343,22 +345,13 @@ def chat(request: ChatRequest):
         )
 
     try:
-        # إعداد الـ Inputs متوافقة مع الـ Graph State
-        graph_inputs = {
-            "query": query,
-            "messages": []  # الـ LangGraph يسحب الـ History تلقائياً عبر الـ Checkpointer وبناء على الـ thread_id
-        }
-        
-        # تمرير الـ thread_id لإدارة الذاكرة المستمرة لجلسة الشات
+        graph_inputs = {"query": query, "messages": []}
         thread_config = {"configurable": {"thread_id": thread_id}}
-        
-        # استدعاء الـ LangGraph Pipeline
         graph_output = customer_rag_graph.invoke(graph_inputs, config=thread_config)
-        
         return {
             "query": query,
             "response": graph_output.get("response", ""),
-            "transfer_to_human": graph_output.get("transfer_to_human", False),  # الفلاج الحيوي للباك والفرونت
+            "transfer_to_human": graph_output.get("transfer_to_human", False),
             "thread_id": thread_id
         }
     except Exception as e:
@@ -366,6 +359,150 @@ def chat(request: ChatRequest):
             status_code=500,
             detail=f"Error executing LangGraph pipeline: {str(e)}"
         )
+
+
+# ── STREAMING CHAT ENDPOINT ───────────────────────────────────────────────────
+# This endpoint is consumed exclusively by the React frontend.
+# It bypasses LangGraph and calls Groq directly with stream=True so that
+# every token chunk is forwarded to the browser as a Server-Sent Event (SSE)
+# the moment it arrives, producing the ChatGPT-style word-by-word effect.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StreamChatRequest(BaseModel):
+    query: str
+    category: str = "ALL"
+    top_k: int = 5
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: StreamChatRequest):
+    """
+    Streaming RAG Chat endpoint — returns text/event-stream.
+
+    Flow:
+      1. Retrieve top-k context chunks from FAISS (same helper as /api/search).
+      2. Build the hardened RAG guardrail system prompt with the retrieved context.
+      3. Call Groq chat completions with stream=True inside an async generator.
+      4. Yield each token chunk as an SSE 'data:' line so the browser reader
+         can append it to the active bot message in real time.
+      5. Send a terminal 'data: [DONE]' event so the frontend knows the
+         stream has ended and can finalise state.
+    """
+    query = request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    if not groq_client:
+        raise HTTPException(
+            status_code=503,
+            detail="Groq LLM service is not configured."
+        )
+
+    # ── Step 1: RAG Retrieval (runs synchronously — fast FAISS call) ──────────
+    top_k = min(request.top_k, 20)
+    context_results = get_semantic_search_results(
+        query, request.category.upper(), top_k
+    )
+
+    # Build a compact context block from the retrieved Q-A pairs
+    if context_results:
+        context_block = "\n\n".join(
+            f"Q: {r['instruction']}\nA: {r['response']}"
+            for r in context_results
+        )
+    else:
+        context_block = "No relevant documents were found in the knowledge base for this query."
+
+    # ── Step 2: System prompt (strict RAG guardrail) ──────────────────────────
+    SYSTEM_PROMPT = """You are a precise, professional AI Assistant for the CoreAI Knowledge Base system.
+Your ONLY source of truth is the Retrieved Context provided below.
+
+═══════════════════════════════════════════════════════
+STRICT RAG GUARDRAIL RULES:
+═══════════════════════════════════════════════════════
+RULE 1 — GROUNDING: Answer EXCLUSIVELY from the Retrieved Context.
+  Do NOT use prior training knowledge or general world knowledge.
+
+RULE 2 — OUT-OF-DOMAIN REFUSAL: If the question cannot be answered
+  from the context, respond with EXACTLY:
+  "I cannot find any information regarding this in the uploaded CoreAI
+  Knowledge Base documents. Currently, my knowledge is limited to the
+  active files listed in your workspace panel."
+
+RULE 3 — LANGUAGE MATCHING: Respond in the same language as the question.
+
+RULE 4 — SOURCE CITATION: End successful answers with:
+  📄 Source: [topic from context] | Confidence: [High/Medium/Low]
+
+RULE 5 — NO HALLUCINATION: Never invent facts, statistics, or policies.
+═══════════════════════════════════════════════════════
+Retrieved Context (your ONLY allowed source of truth):
+═══════════════════════════════════════════════════════
+{context}
+""".format(context=context_block)
+
+    # ── Step 3: Async SSE generator ───────────────────────────────────────────
+    async def response_generator():
+        """
+        Calls Groq with stream=True and yields one SSE 'data:' line per token.
+        The Groq SDK returns a synchronous iterator even in streaming mode, so
+        we run it in a thread pool executor to avoid blocking the event loop.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+
+            # Build the Groq streaming call (synchronous SDK, runs in executor)
+            def _start_stream():
+                return groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user",   "content": query},
+                    ],
+                    model="llama-3.1-8b-instant",
+                    temperature=0.0,
+                    max_tokens=1024,
+                    stream=True,       # <-- enables token-by-token streaming
+                )
+
+            # Kick off the stream in a thread so the async loop stays free
+            stream = await loop.run_in_executor(None, _start_stream)
+
+            # Iterate over each chunk the LLM sends back
+            for chunk in stream:
+                # Extract the token text from the delta (may be None on final chunk)
+                token = chunk.choices[0].delta.content
+                if token is None:
+                    continue
+
+                # Encode token as a JSON string to safely escape newlines/quotes,
+                # then format as an SSE 'data:' line ending with double newline.
+                payload = json.dumps({"token": token})
+                yield f"data: {payload}\n\n"
+
+                # Yield control back to the event loop between chunks so other
+                # requests are not starved during a long generation.
+                await asyncio.sleep(0)
+
+            # ── Terminal event: signals the frontend reader to stop ────────────
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            # Surface errors as a special SSE error event so the frontend
+            # catch block can display the offline fallback message.
+            error_payload = json.dumps({"error": str(e)})
+            yield f"data: {error_payload}\n\n"
+            yield "data: [DONE]\n\n"
+
+    # ── Step 4: Return StreamingResponse ─────────────────────────────────────
+    return StreamingResponse(
+        response_generator(),
+        media_type="text/event-stream",
+        headers={
+            # Prevent any proxy/CDN from buffering the SSE stream
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/categories")

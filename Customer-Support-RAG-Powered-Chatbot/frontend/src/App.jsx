@@ -859,40 +859,142 @@ function ChatPane({ prefillQuery, onPrefillConsumed }) {
     }
   }, [prefillQuery, onPrefillConsumed]);
 
-  /** Send message — tries FastAPI, falls back to mock */
+  /**
+   * handleSend — Streaming RAG Chat
+   * ─────────────────────────────────────────────────────────────────────────
+   * Instead of waiting for the full JSON response (old behaviour), this now
+   * calls POST /api/chat/stream which returns a text/event-stream.
+   *
+   * The flow is:
+   *   1. Append the user message to the history immediately.
+   *   2. Show the typing indicator while the first token hasn't arrived yet.
+   *   3. On the first token, hide the indicator and INSERT an empty bot message
+   *      into state with a stable ID so React has a DOM node to update.
+   *   4. Use response.body.getReader() + TextDecoder to read SSE chunks in a
+   *      while(true) loop, parsing each "data: {...}" line and appending the
+   *      token text to the live bot message via a functional setState updater.
+   *   5. When "data: [DONE]" is received, break the loop and unlock the input.
+   *   6. If the fetch itself fails (server offline), show the smart fallback.
+   * ─────────────────────────────────────────────────────────────────────────
+   */
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || isTyping) return;
 
+    // ── Step 1: Append user message & lock input ──────────────────────────
     setMessages((prev) => [...prev, { id: Date.now(), role: "user", text }]);
     setInputText("");
-    setIsTyping(true);
+    setIsTyping(true);           // shows "Assistant is thinking..." indicator
+
+    // Stable ID for the bot reply bubble we'll create once tokens arrive
+    const botMsgId = Date.now() + 1;
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      // ── Step 2: Open the SSE stream ─────────────────────────────────────
+      const res = await fetch(`${API_BASE}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: text, category: "ALL", top_k: 5 }),
       });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
+
+      // If the server responded but with an error status, bail to fallback
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // ── Step 3: Set up the stream reader ─────────────────────────────────
+      const reader  = res.body.getReader();   // ReadableStream byte reader
+      const decoder = new TextDecoder();      // UTF-8 text decoder
+      let   buffer  = "";                     // incomplete line accumulator
+      let   firstToken = true;               // flag to initialise bot bubble
+
+      // ── Step 4: Token-by-token reading loop ──────────────────────────────
+      while (true) {
+        const { done, value } = await reader.read();
+
+        // When the TCP connection closes, done === true
+        if (done) break;
+
+        // Decode the raw bytes into a UTF-8 string and append to buffer.
+        // 'stream: true' keeps the decoder's internal state across chunks so
+        // multi-byte characters that span chunk boundaries decode correctly.
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE lines end with "\n\n". Split on that to get complete events.
+        const parts = buffer.split("\n\n");
+
+        // The last element is either empty or an incomplete line — keep it
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          // Each part starts with "data: " per the SSE spec
+          const line = part.startsWith("data: ") ? part.slice(6).trim() : part.trim();
+          if (!line) continue;
+
+          // Terminal sentinel — the backend signals end-of-stream
+          if (line === "[DONE]") {
+            setIsTyping(false);
+            return;             // exit the entire handleSend function cleanly
+          }
+
+          // Parse the JSON payload: either { token: "..." } or { error: "..." }
+          let parsed;
+          try { parsed = JSON.parse(line); }
+          catch { continue; }   // skip malformed lines silently
+
+          // Handle server-side error events
+          if (parsed.error) {
+            setIsTyping(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: botMsgId, role: "bot",
+                text: `Server error: ${parsed.error}`,
+                sources: [],
+              },
+            ]);
+            return;
+          }
+
+          const token = parsed.token ?? "";
+          if (!token) continue;
+
+          if (firstToken) {
+            // ── Step 5a: First token — hide indicator, create bot bubble ───
+            firstToken = false;
+            setIsTyping(false);
+            setMessages((prev) => [
+              ...prev,
+              { id: botMsgId, role: "bot", text: token, sources: [] },
+            ]);
+          } else {
+            // ── Step 5b: Subsequent tokens — append to existing bubble ──────
+            // Functional updater finds the bubble by ID and appends the token.
+            // This avoids stale closure issues and never touches other messages.
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === botMsgId
+                  ? { ...msg, text: msg.text + token }
+                  : msg
+              )
+            );
+          }
+        }
+      }
+
+      // Flush any remaining buffer content after the connection closes
       setIsTyping(false);
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + 1, role: "bot", text: data.response ?? "No response.", sources: data.sources ?? [] },
-      ]);
+
     } catch {
       /* ── SMART OFFLINE FALLBACK ─────────────────────────────────────────────
-       * The FastAPI backend is unreachable. Instead of a misleading hardcoded
-       * answer, acknowledge the user's exact query and explain the situation
-       * clearly, preserving the typing indicator during the wait.
+       * The FastAPI backend is unreachable. After a realistic delay that keeps
+       * the typing indicator visible, show a context-aware refusal message
+       * that echoes the user's query and explains the network situation.
        * ─────────────────────────────────────────────────────────────────────*/
       await new Promise((r) => setTimeout(r, 1600 + Math.random() * 900));
       setIsTyping(false);
       setMessages((prev) => [
         ...prev,
         {
-          id: Date.now() + 1,
+          id: botMsgId,
           role: "bot",
           text: `[Offline Mode] Your query: "${text}" was captured, but the CoreAI FastAPI server is currently unreachable.\n\nPlease ensure the backend service is running on http://localhost:8000 to process this request against the live Vector Database index.\n\nOnce the server is online, your question will be answered using the RAG pipeline with real-time document retrieval.`,
           sources: [
