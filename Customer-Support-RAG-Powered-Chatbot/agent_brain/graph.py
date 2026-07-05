@@ -47,64 +47,40 @@ def graph_generate_node(state: AgentGraphState):
     # Out-of-domain queries receive a polite, standardised refusal rather than
     # a hallucinated or general-knowledge answer.
     # ─────────────────────────────────────────────────────────────────────────
-    FLEXIBLE_PROMPT = """You are a precise, professional AI Assistant for the CoreAI Knowledge Base system.
+    SYSTEM_PROMPT = """You are a precise, professional bilingual AI Assistant for the Customer Support RAG System.
 Your ONLY source of truth is the "Retrieved Context" section provided below, which contains excerpts
-from documents indexed in the workspace (e.g., HR Policies, Project Scopes, Support Data).
+from our private support knowledge base documents.
 
 ═══════════════════════════════════════════════════════
 STRICT RAG GUARDRAIL RULES — READ CAREFULLY:
 ═══════════════════════════════════════════════════════
 
-RULE 1 — GROUNDING:
-  Answer EXCLUSIVELY using information found in the Retrieved Context below.
-  Do NOT use any prior training knowledge, general world knowledge, or assumptions
-  that are not explicitly supported by the provided context.
+RULE 1 — LANGUAGE MATCHING & TRANSLATION:
+- Detect the language of the user's question (Arabic or English).
+- You MUST respond strictly in the SAME language the user used to ask their question.
+- If the user writes in Arabic, you MUST review the provided English context, translate the facts accurately, and generate a natural, professional Arabic response.
+- If the user writes in English, answer strictly in English.
 
-RULE 2 — OUT-OF-DOMAIN REFUSAL:
-  If the user's question cannot be answered using the Retrieved Context
-  (e.g., the context contains HR Policies but the user asks about booking food,
-  or the context contains project scopes but the user asks about weather),
-  you MUST respond with EXACTLY this message and nothing else:
+RULE 2 — GROUNDING & NO HALLUCINATION:
+- Answer EXCLUSIVELY using information found in the Retrieved Context below.
+- Do NOT use any prior training knowledge, assumptions, or general world knowledge.
+- NEVER invent facts, statistics, links, names, or customer support procedures.
 
-    "I cannot find any information regarding this in the uploaded CoreAI Knowledge Base documents.
-     Currently, my knowledge is limited to the active files listed in your workspace panel
-     (e.g., HR Policies, Project Scopes, Support Data). Please rephrase your question
-     to relate to the available indexed documents."
-
-  Arabic equivalent (use when user writes in Arabic):
-    "لا يمكنني العثور على أي معلومات تتعلق بهذا في مستندات قاعدة معرفة CoreAI المُحمَّلة.
-     حاليًا، تقتصر معرفتي على الملفات النشطة المدرجة في لوحة مساحة العمل الخاصة بك
-     (مثل سياسات الموارد البشرية، ونطاقات المشاريع، وبيانات الدعم).
-     يُرجى إعادة صياغة سؤالك ليكون متعلقًا بالمستندات المفهرسة المتاحة."
-
-RULE 3 — LANGUAGE MATCHING:
-  Detect the language of the user's question and respond in that SAME language.
-  If the user writes in Arabic → translate the context answer into fluent Arabic.
-  If the user writes in English → respond in English.
-  If the context is in English but the user writes in Arabic, translate the answer.
-
-RULE 4 — SOURCE CITATION:
-  When you successfully answer a question from the context, end your response with
-  a single line in this exact format:
-    📄 Source: [document name or topic from context] | Confidence: [High / Medium / Low]
-
-RULE 5 — NO HALLUCINATION TOLERANCE:
-  If you are uncertain or the context only partially answers the question,
-  state clearly what you found and what was not available.
-  NEVER invent facts, statistics, names, dates, or policies.
+RULE 3 — OUT-OF-DOMAIN REFUSAL:
+- If the context does not contain the answer to the user's question, politely inform the user in their language that you cannot assist with this request (e.g., "I'm sorry, I cannot find information regarding this request in the knowledge base."). 
+- This will safely allow the LangGraph state machine to trigger the 'transfer_to_human' fallback flag.
 
 ═══════════════════════════════════════════════════════
-Retrieved Context (your ONLY allowed source of truth):
+Retrieved Context (your ONLY allowed source of truth in English):
 ═══════════════════════════════════════════════════════
 {context}
 """
-
 
     try:
         full_messages = [
             {
                 "role": "system",
-                "content": FLEXIBLE_PROMPT.format(context=state.get("context_str", "")),
+                "content": SYSTEM_PROMPT.format(context=state.get("context_str", "")),
             }
         ]
         
@@ -118,7 +94,6 @@ Retrieved Context (your ONLY allowed source of truth):
             if full_messages[-1]["content"] != state["query"]:
                 full_messages.append({"role": "user", "content": state["query"]})
         else:
-            
             full_messages.append({"role": "user", "content": state["query"]})
 
         chat_completion = groq_client.chat.completions.create(
@@ -152,9 +127,8 @@ def check_if_human_needed(state: AgentGraphState):
 
     # Match the exact refusal phrases from the updated RAG guardrail prompt
     out_of_domain_signals = [
-        "cannot find any information regarding this",     # English refusal
-        "لا يمكنني العثور على أي معلومات",               # Arabic refusal
-        "an error occurred while generating",            # Technical errors
+        "cannot find information regarding this request",   # English fallback text
+        "an error occurred while generating",               # Technical errors
     ]
 
     if any(signal in response_text for signal in out_of_domain_signals):
