@@ -403,7 +403,7 @@ git push origin feature/amazing-feature
 ### Web Chat Interface
 
 <p align="center">
-  <img src="images\Capture1.PNG"  width="700"/>
+  <img src="images\Capture2.PNG"  width="700"/>
 </p>
 
 ---
