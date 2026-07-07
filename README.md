@@ -392,7 +392,9 @@ git push origin feature/amazing-feature
 
 # 🏗️ Architecture
 
-![Architecture](images/capture1.PNG)
+<p align="center">
+  <img src="images\Capture1.PNG"  width="800"/>
+</p>
 
 ---
 
@@ -400,7 +402,11 @@ git push origin feature/amazing-feature
 
 ### Web Chat Interface
 
-## ![Architecture](images/capture2.PNG)
+<p align="center">
+  <img src="images\Capture1.PNG"  width="700"/>
+</p>
+
+---
 
 <p align="center">
   <a href="videos/demo.mp4">
